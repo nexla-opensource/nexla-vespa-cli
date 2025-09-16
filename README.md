@@ -2,6 +2,21 @@
 
 A cross-platform CLI tool that generates Vespa applications from Nexla Nexsets.
 
+## About Vespa and Nexla Integration
+
+**Vespa** is a powerful, open-source big data serving engine that excels at real-time computation over large datasets. It combines search, recommendation, personalization, and analytics in a single platform, enabling applications to serve results with low latency at massive scale.
+
+**Benefits of using Vespa with Nexla:**
+- **Seamless Data Flow**: Nexla provides native Vespa connectors for effortless data retrieval and ingestion to Vespa instances
+- **Real-time Analytics**: Process and serve data insights instantly as new data flows through your Nexla pipelines
+- **Scalable Search**: Transform your Nexla datasets into powerful, searchable applications with Vespa's advanced query capabilities
+- **Unified Platform**: Leverage Nexla's data integration capabilities with Vespa's serving engine for end-to-end data solutions
+
+This plugin bridges the gap between your Nexla data transformations and Vespa deployments, automatically generating production-ready Vespa applications from your Nexsets.
+
+**For comprehensive information about Vespa, visit the official documentation:**
+https://docs.vespa.ai/en/getting-started.html
+
 ## Quick Start
 
 ### Windows
@@ -34,6 +49,23 @@ Run from terminal:
 ## Output
 
 The tool generates a complete Vespa application in the `vespa_app/` directory, ready for deployment on your machine.
+
+### Important: services.xml Configuration
+
+The generated `services.xml` file is a **default template** that provides a basic Vespa configuration. You will need to review and customize it according to:
+
+- Your specific use case requirements
+- Your Vespa instance settings and topology
+- Performance and scaling needs
+
+**Please refer to the official Vespa services.xml documentation for detailed configuration options:**
+https://docs.vespa.ai/en/reference/services.html
+
+Common customizations may include:
+- Adjusting node configurations and resource allocation
+- Configuring content clusters and document processing
+- Setting up search chains and ranking profiles
+- Modifying container clusters for your application needs
 
 ## Troubleshooting
 
