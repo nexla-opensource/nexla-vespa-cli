@@ -72,9 +72,9 @@ class VespaMapper:
                         vespa_field_type = "array<long>"
                 elif array_item_type == "number":
                     if array_format_type in ["float", "double", "decimal"]:
-                        vespa_field_type = "array<float>"
+                        vespa_field_type = "variablearray<float>"
                     else:
-                        vespa_field_type = "array<float>"
+                        vespa_field_type = "variablearray<float>"
                 elif array_item_type == "boolean":
                     vespa_field_type = "array<bool>"
                 else:
