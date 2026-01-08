@@ -2,6 +2,8 @@ import requests
 import webbrowser
 import getpass
 import yaml
+import os
+import re
 
 
 class NexlaTools:
@@ -27,27 +29,31 @@ class NexlaTools:
     
     
 class VespaMapper:
-    def __init__(self, vespa_map_file_path: str) -> None:
+    def __init__(self, vespa_map_file_path: str, services_xml_path: str = "vespa_app/services.xml") -> None:
         self.vespa_field_map = self._load_yaml_map(vespa_map_file_path)
+        self.services_xml_path = services_xml_path
     
     def _load_yaml_map(self, file_path: str) -> dict:
         """Load Vespa schema mapping yaml file"""
         with open(file_path, 'r') as file:
             data = yaml.safe_load(file)
-            for k, v in data.items():
-                parsed = "\n".join(v)
-                data[k] = parsed
-                
+
         return data
     
-    def _get_vespa_schema_section(self, field_name: str, vespa_field_type: str) -> str:
-        """Return a schema section related to a field"""
-        section = self.vespa_field_map[vespa_field_type].replace(r"{{FIELD_NAME}}", field_name)
-        return section
+    def _get_vespa_schema_section(self, field_name: str, vespa_field_type: str) -> dict:
+        """Return schema sections related to a field"""
+        sections = self.vespa_field_map[vespa_field_type]
+        processed_sections = {
+            'document_field': sections[0].replace(r"{{FIELD_NAME}}", field_name) if len(sections) > 0 else None,
+            'derived_field': sections[1].replace(r"{{FIELD_NAME}}", field_name) if len(sections) > 1 else None
+        }
+        return processed_sections
     
     def create_vespa_schema(self, nexset_schema: dict, nexset_id: str) -> str:
         """Generate a complete Vespa schema.sd file based on a Nexset schema"""
-        field_sections = []
+        document_fields = []
+        derived_fields = []
+
         for field_name, properties in nexset_schema.items():
             nexla_field_type = properties["type"]
             nexla_format_type = properties.get("format", "")
@@ -112,29 +118,49 @@ class VespaMapper:
             else:
                 vespa_field_type = "string"
 
-            field_section = self._get_vespa_schema_section(field_name=field_name, vespa_field_type=vespa_field_type)
-            field_sections.append(field_section)
+            field_sections = self._get_vespa_schema_section(field_name=field_name, vespa_field_type=vespa_field_type)
+
+            if field_sections['document_field']:
+                document_fields.append(field_sections['document_field'])
+            if field_sections['derived_field']:
+                derived_fields.append(field_sections['derived_field'])
 
         schema_name = f"nexset_{nexset_id}"
-        schema_template = self._create_schema_template(schema_name, field_sections)
-        output_file = f"vespa_app/app/schemas/{schema_name}.sd"
+        schema_template = self._create_schema_template(schema_name, document_fields, derived_fields)
+        output_file = f"vespa_app/schemas/{schema_name}.sd"
+
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
         with open(output_file, "w") as file:
             file.write(schema_template)
 
+        self._update_services_xml(schema_name)
+
         return output_file
 
-    def _create_schema_template(self, schema_name: str, field_sections: list) -> str:
+    def _create_schema_template(self, schema_name: str, document_fields: list, derived_fields: list) -> str:
         """Create a complete Vespa schema template with proper structure"""
-        fields_content = "\n".join(field_sections)
+        document_fields_content = "\n".join(document_fields)
+        derived_fields_content = "\n".join(derived_fields)
+
+        base_field_names = []
+        for section in document_fields:
+            if "field " in section:
+                field_name = section.split("field ")[1].split(" type")[0]
+                base_field_names.append(field_name)
+
+        fieldset_fields = ", ".join(base_field_names[:5])
 
         template = f"""schema {schema_name} {{
     document {schema_name} {{
-{fields_content}
+{document_fields_content}
     }}
 
+    # Derived fields - MUST be OUTSIDE document block
+{derived_fields_content}
+
     fieldset default {{
-        fields: {", ".join([section.split("field ")[1].split(" type")[0] for section in field_sections if "field " in section][:5])}
+        fields: {fieldset_fields}
     }}
 
     rank-profile default inherits default {{
@@ -145,6 +171,38 @@ class VespaMapper:
 }}"""
 
         return template
+
+    def _update_services_xml(self, schema_name: str) -> None:
+        """Update services.xml with the new document type in the content cluster"""
+        if not os.path.exists(self.services_xml_path):
+            raise FileNotFoundError(f"services.xml not found at {self.services_xml_path}")
+
+        with open(self.services_xml_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+
+        pattern = r'(<document\s+type=")[^"]*("\s+mode="[^"]*"\s*/>)'
+
+        if re.search(pattern, content):
+            updated_content = re.sub(pattern, rf'\g<1>{schema_name}\g<2>', content)
+        else:
+            documents_pattern = r'(<documents>)(.*?)(</documents>)'
+            match = re.search(documents_pattern, content, re.DOTALL)
+
+            if match:
+                documents_content = match.group(2)
+                if '<document' not in documents_content:
+                    new_document_line = f'\n            <document type="{schema_name}" mode="index" />'
+                    updated_content = content.replace(
+                        match.group(0),
+                        f'{match.group(1)}{new_document_line}\n        {match.group(3)}'
+                    )
+                else:
+                    raise ValueError("Unexpected document structure in services.xml")
+            else:
+                raise ValueError("Could not find <documents> element within <content> in services.xml")
+
+        with open(self.services_xml_path, 'w', encoding='utf-8') as file:
+            file.write(updated_content)
 
 
 def main():
